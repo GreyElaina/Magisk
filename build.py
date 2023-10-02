@@ -72,9 +72,9 @@ ndk_root = op.join(sdk_path, 'ndk')
 ndk_path = op.join(ndk_root, 'magisk')
 ndk_build = op.join(ndk_path, 'ndk-build')
 rust_bin = op.join(ndk_path, 'toolchains', 'rust', 'bin')
-cargo = op.join(rust_bin, 'cargo' + EXE_EXT)
+cargo = op.join(rust_bin, f'cargo{EXE_EXT}')
 gradlew = op.join('.', 'gradlew' + ('.bat' if is_windows else ''))
-adb_path = op.join(sdk_path, 'platform-tools', 'adb' + EXE_EXT)
+adb_path = op.join(sdk_path, 'platform-tools', f'adb{EXE_EXT}')
 native_gen_path = op.realpath(op.join('native', 'out', 'generated'))
 
 # Global vars
@@ -205,7 +205,7 @@ def clean_elf():
 
 def run_ndk_build(flags):
     os.chdir('native')
-    flags = 'NDK_PROJECT_PATH=. NDK_APPLICATION_MK=src/Application.mk ' + flags
+    flags = f'NDK_PROJECT_PATH=. NDK_APPLICATION_MK=src/Application.mk {flags}'
     proc = system(f'{ndk_build} {flags} -j{cpu_count}')
     if proc.returncode != 0:
         error('Build binary failed!')
@@ -224,7 +224,7 @@ def run_cargo_build(args):
         targets.add('magisk')
 
     env = os.environ.copy()
-    env['CARGO_BUILD_RUSTC'] = op.join(rust_bin, 'rustc' + EXE_EXT)
+    env['CARGO_BUILD_RUSTC'] = op.join(rust_bin, f'rustc{EXE_EXT}')
 
     # Install cxxbridge and generate C++ bindings
     native_out = op.join('..', 'out')
@@ -245,7 +245,7 @@ def run_cargo_build(args):
     finally:
         # Make sure the config file rename is always reverted
         mv(cfg_bak, cfg)
-    cxxbridge = op.join(local_cargo_root, 'bin', 'cxxbridge' + EXE_EXT)
+    cxxbridge = op.join(local_cargo_root, 'bin', f'cxxbridge{EXE_EXT}')
     mkdir(native_gen_path)
     for p in ['base', 'boot', 'core', 'init', 'sepolicy']:
         text = cmd_out([cxxbridge, op.join(p, 'lib.rs')])
@@ -257,8 +257,7 @@ def run_cargo_build(args):
     cmds = [cargo, 'build', '-Z', 'build-std=std,panic_abort',
            '-Z', 'build-std-features=panic_immediate_abort']
     for target in targets:
-        cmds.append('-p')
-        cmds.append(target)
+        cmds.extend(('-p', target))
     rust_out = 'debug'
     if args.release:
         cmds.append('-r')
@@ -268,7 +267,7 @@ def run_cargo_build(args):
 
     os_name = platform.system().lower()
     llvm_bin = op.join(ndk_path, 'toolchains', 'llvm', 'prebuilt', f'{os_name}-x86_64', 'bin')
-    env['TARGET_CC'] = op.join(llvm_bin, 'clang' + EXE_EXT)
+    env['TARGET_CC'] = op.join(llvm_bin, f'clang{EXE_EXT}')
     env['RUSTFLAGS'] = '-Clinker-plugin-lto'
     for (arch, triple) in zip(archs, triples):
         env['TARGET_CFLAGS'] = f'--target={triple}21'
@@ -413,8 +412,13 @@ def build_binary(args):
 def build_apk(args, module):
     build_type = 'Release' if args.release else 'Debug'
 
-    proc = execv([gradlew, f'{module}:assemble{build_type}',
-                  '-PconfigPath=' + op.abspath(args.config)])
+    proc = execv(
+        [
+            gradlew,
+            f'{module}:assemble{build_type}',
+            f'-PconfigPath={op.abspath(args.config)}',
+        ]
+    )
     if proc.returncode != 0:
         error(f'Build {module} failed!')
 
@@ -424,7 +428,7 @@ def build_apk(args, module):
     source = op.join(module, 'build', 'outputs', 'apk', build_type, apk)
     target = op.join(config['outdir'], apk)
     mv(source, target)
-    header('Output: ' + target)
+    header(f'Output: {target}')
 
 
 def build_app(args):
@@ -514,7 +518,7 @@ def patch_avd_ramdisk(args):
     header('* Patching emulator ramdisk.img')
 
     # Create a backup to prevent accidental overwrites
-    backup = args.ramdisk + '.bak'
+    backup = f'{args.ramdisk}.bak'
     if not op.exists(backup):
         cp(args.ramdisk, backup)
 
@@ -525,7 +529,7 @@ def patch_avd_ramdisk(args):
     # Need to turn off system as root
     if 'SystemAsRoot = on' in adv_ft:
         # Create a backup
-        cp(ini, ini + '.bak')
+        cp(ini, f'{ini}.bak')
         adv_ft = adv_ft.replace('SystemAsRoot = on', 'SystemAsRoot = off')
         with open(ini, 'w') as f:
             f.write(adv_ft)
